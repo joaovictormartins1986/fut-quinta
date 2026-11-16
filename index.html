@@ -691,7 +691,7 @@ function empateModal(){
 function slotModal(d, id){
   const s = sideOf(d, id);
   modal(`<h3>${esc(pname(id))}</h3><p class="sm mu">${s >= 0 ? 'Em quadra — ' + tfull(s) : 'Na fila'}</p>
-    <button class="btn blk" data-a="saiuq" data-id="${id}">Saiu do jogo (lesão, foi embora…)</button>
+    <button class="btn blk" data-a="saiuq" data-id="${id}">Saiu do jogo — entra o 1º da fila</button>
     ${d.fila.length && s >= 0 ? `<div class="sm" style="font-weight:600;margin-top:6px">Trocar de lugar com alguém da fila:</div><div class="cand">${d.fila.map((x,k) => `<button data-a="trocaf" data-id="${id}" data-k="${k}">${esc(pname(x))}<small>${k+1}º da fila</small></button>`).join('')}</div>` : ''}
     <button class="btn" data-a="mclose">Fechar</button>`);
 }
@@ -723,7 +723,7 @@ function vJogo(){
     return (ng ? ` <b class="evb">${'⚽'.repeat(ng)}</b>` : '') + (na ? ` <b class="evb">${'<span class="abox">A</span>'.repeat(na)}</b>` : ''); };
   const meio = new Set(d.meio || []);
   const slots = k => (d.quadra[k] || []).map(id => `<span class="slotw"><button class="slot ${meio.has(id)?'sub':''}" data-a="slot" data-id="${id}"><span>${esc(pname(id))}${evb(id)}${meio.has(id) ? '<small>entrou no meio do jogo</small>' : ''}</span></button><button class="sx" data-a="saiuq" data-id="${id}" title="Saiu do jogo">✕</button></span>`).join('')
-    + ((d.quadra[k] || []).length < 5 && d.fila.length ? `<button class="slot vaga" data-a="compq" data-k="${k}"><span>＋ Completar<small>${5 - d.quadra[k].length} vaga${5 - d.quadra[k].length > 1 ? 's' : ''}</small></span></button>` : '');
+    + ((d.quadra[k] || []).length < 5 && d.fila.length ? `<button class="slot vaga" data-a="compq" data-k="${k}"><span>＋ Completar<small>entra ${esc(pname(d.fila[0]))}, 1º da fila</small></span></button>` : '');
   const side = k => `<div class="side" style="background:${COLETE[k].c};color:${COLETE[k].t}">
       <div class="tn">${esc(tname(k))}</div><div class="sm" style="font-weight:700;opacity:.8;margin-top:-6px">colete ${COLETE[k].n.toLowerCase()}</div><div class="gl num">${live.g[k]}</div>
       <div class="gb"><button data-a="gol" data-k="${k}" data-d="-1">−</button><button class="plus" data-a="gol" data-k="${k}" data-d="1">+</button></div>
@@ -1130,22 +1130,18 @@ const A = {
   slot: x => slotModal(S.days[ui.date], x.id),
   saiu: x => A.saiuq(x),
   // saiu durante o jogo: escolhe quem entra (1º da fila, outro da fila ou seguir com 4)
-  saiuq: x => { const d = S.days[ui.date], s = sideOf(d, x.id);
+  saiuq: async x => { const d = S.days[ui.date], s = sideOf(d, x.id);
     if (s < 0){ (d.saiu ||= {})[x.id] = { j: d.jogos.length + 1 }; tirarDoRodizio(d, x.id); saveDay(ui.date); closeModal(); render(); toast(`${pname(x.id)} saiu do rodízio`); return; }
-    const f = d.fila;
-    modal(`<h3>${esc(pname(x.id))} saiu</h3><p class="sm mu">Sai do rodízio e continua na conta do rateio. Quem entra no lugar?</p>
-      ${f.length ? `<button class="btn pri blk" data-a="saiuok" data-id="${x.id}" data-s="${f[0]}">1º da fila: ${esc(pname(f[0]))}</button>` : ''}
-      ${f.length > 1 ? `<details><summary class="sm mu" style="cursor:pointer">Escolher outro da fila</summary><div class="cand" style="margin-top:6px">${f.slice(1).map((y,k) => `<button data-a="saiuok" data-id="${x.id}" data-s="${y}">${esc(pname(y))}<small>${k+2}º da fila</small></button>`).join('')}</div></details>` : ''}
-      <button class="btn blk" data-a="saiuok" data-id="${x.id}" data-s="">Seguir com ${(d.quadra[s].length - 1)} (ninguém entra)</button>
-      <button class="btn" data-a="mclose">Cancelar</button>`); },
+    const nx = d.fila[0];
+    if (!(await ask(`<b>${esc(pname(x.id))}</b> saiu do jogo?<br><span class="sm mu">${nx ? `Entra o 1º da fila: <b>${esc(pname(nx))}</b>.` : `A fila está vazia — o ${esc(tname(s))} segue com ${d.quadra[s].length - 1}.`} Quem saiu continua na conta do rateio.</span>`, 'Confirmar saída'))) return;
+    A.saiuok({ id:x.id, s:nx || '' }); },
   saiuok: x => { const d = S.days[ui.date], s = sideOf(d, x.id); if (s < 0) return;
     (d.saiu ||= {})[x.id] = { j: d.jogos.length + 1 };
     const i = d.quadra[s].indexOf(x.id);
     if (x.s){ d.fila.splice(d.fila.indexOf(x.s), 1); d.quadra[s][i] = x.s; (d.meio ||= []).push(x.s); }
     else d.quadra[s].splice(i, 1);
     saveDay(ui.date); closeModal(); render(); toast(x.s ? `${pname(x.s)} entrou no lugar de ${pname(x.id)}` : `${tname(s)} segue com ${d.quadra[s].length}`); },
-  compq: x => { const d = S.days[ui.date], k = +x.k;
-    modal(`<h3>Completar o ${esc(tfull(k))}</h3><p class="sm mu">Quem entra?</p><div class="cand">${d.fila.map((y,i) => `<button data-a="compok" data-k="${k}" data-s="${y}">${esc(pname(y))}<small>${i+1}º da fila</small></button>`).join('')}</div><button class="btn" data-a="mclose">Cancelar</button>`); },
+  compq: x => { const d = S.days[ui.date]; if (d.fila.length) A.compok({ k:x.k, s:d.fila[0] }); },
   compok: x => { const d = S.days[ui.date], k = +x.k; d.fila.splice(d.fila.indexOf(x.s), 1); d.quadra[k].push(x.s); (d.meio ||= []).push(x.s);
     saveDay(ui.date); closeModal(); render(); toast(`${pname(x.s)} entrou no ${tname(k)}`); },
   trocaf: x => { const d = S.days[ui.date], s = sideOf(d, x.id), k = +x.k; if (s < 0) return;
