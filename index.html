@@ -607,7 +607,7 @@ function render(){
   const banner = ui.mode === 'local' ? `<div class="banner">Sem conexão com o servidor. Verifique a internet.</div>` : '';
   $('#view').className = ui.tab === 'jogo' ? 'wide' : '';
   $('#view').innerHTML = banner + v();
-  if (ui.tab === 'dia' && ui.filtro) applyFiltro();
+  if ((ui.tab === 'dia' && ui.filtro) || (ui.tab === 'cadastro' && ui.filtroCad)) applyFiltro();
   tick();
 }
 
@@ -965,7 +965,7 @@ function relText(m){
 function vCad(){
   const ps = Object.entries(S.players).sort((a,b) => (b[1].ativo!==false) - (a[1].ativo!==false) || a[1].nome.localeCompare(b[1].nome,'pt-BR'));
   const c = S.config;
-  const crow = ([id,p]) => `<div class="prow ${p.ativo===false?'off':''}"><span class="nm">${esc(p.nome)}</span>${p.goleiro ? '<span class="chip">🧤 Goleiro</span>' : ''}<button class="btn sm" style="margin-left:auto" data-a="pedit" data-id="${id}">Editar</button></div>`;
+  const crow = ([id,p]) => `<div class="prow ${p.ativo===false?'off':''}" data-nm="${esc(norm(p.nome))}"><span class="nm">${esc(p.nome)}</span>${p.goleiro ? '<span class="chip">🧤 Goleiro</span>' : ''}<button class="btn sm" style="margin-left:auto" data-a="pedit" data-id="${id}">Editar</button></div>`;
   const J = ps.filter(([,p]) => !p.goleiro), G = ps.filter(([,p]) => p.goleiro);
   const cnt = arr => (n => n + (n === 1 ? ' ativo' : ' ativos'))(arr.filter(([,p]) => p.ativo!==false).length);
   return `
@@ -978,6 +978,7 @@ function vCad(){
       <button class="btn pri" data-a="bulk">Adicionar todos</button></div>`
     : `<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><input id="newName" placeholder="Nome do jogador" style="flex:1 1 100%"><select id="newTipo" style="flex:1"><option value="L">Linha</option><option value="G">🧤 Goleiro</option></select><button class="btn pri" data-a="addp">Adicionar</button></div>`}
     ${typeof tercaPlayers === 'function' ? `<button class="btn blk" style="margin-bottom:12px" data-a="fromterca">Trazer jogadores do cadastro da terça</button>` : ''}
+<div class="filtro"><input id="filtroCad" type="search" placeholder="🔍 Filtrar por nome…" value="${esc(ui.filtroCad||'')}" autocomplete="off"></div>
     <div class="sect">Jogadores <span class="mu">· ${cnt(J)}</span></div><div class="plist">${J.map(crow).join('') || '<div class="empty">Nenhum jogador</div>'}</div>
     <div class="sect">🧤 Goleiros <span class="mu">· ${cnt(G)}</span></div><div class="plist">${G.map(crow).join('') || '<div class="empty sm">Nenhum goleiro cadastrado</div>'}</div>
   </div>
@@ -1238,12 +1239,14 @@ const C = {
 document.addEventListener('click', e => { const b = e.target.closest('[data-a]'); if (!b || b.disabled) return; const f = A[b.dataset.a]; if (f){ e.preventDefault(); f(b.dataset, b); } });
 document.addEventListener('input', e => {
   if (e.target.id === 'tq'){ ui.tq = e.target.value; filtraTerca(); return; }
+  if (e.target.id === 'filtroCad'){ ui.filtroCad = e.target.value; applyFiltro(); return; }
   if (e.target.id !== 'filtro') return;
   ui.filtro = e.target.value;
   applyFiltro();
 });
 function applyFiltro(){
-  document.querySelectorAll('#view .prow[data-nm]').forEach(r => { r.hidden = !matchNm(r.dataset.nm, ui.filtro); });
+  const q = ui.tab === 'cadastro' ? ui.filtroCad : ui.filtro;
+  document.querySelectorAll('#view .prow[data-nm]').forEach(r => { r.hidden = !matchNm(r.dataset.nm, q); });
   document.querySelectorAll('#view .plist').forEach(l => { if (!l.querySelector('.prow[data-nm]')) return;
     const vis = l.querySelector('.prow[data-nm]:not([hidden])'); const sec = l.previousElementSibling;
     if (sec && sec.classList.contains('sect')) sec.hidden = !vis; l.hidden = !vis; });
