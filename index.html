@@ -307,6 +307,10 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--
 .btn,.pay,.seg button{letter-spacing:.3px}
 .pays .pay{width:70px;min-width:0;padding-left:4px;padding-right:4px}.pays .pay.ok{width:144px}
 @media (max-width:620px){ .pays .pay{width:66px} .pays .pay.ok{width:136px} }
+.dghost{position:fixed;z-index:999;pointer-events:none;transform:translate(-50%,-130%);background:var(--ac);color:#06140d;font-weight:800;padding:10px 16px;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.55);white-space:nowrap;font-size:16px}
+.dsrc{opacity:.35}
+.dtgt{outline:3px solid var(--ac)!important;outline-offset:2px}
+[data-dz]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 </style>
 </head>
 <body>
@@ -549,6 +553,15 @@ function previewTeams(d){
 const take = d => d.fila.splice(0, 5);
 // empate (sempre saem os dois) — quem volta primeiro: 'pim' = 1º jogo, par ou ímpar · 're' = entraram juntos, quem era ré · 'novo' = quem entrou por último
 const empTipo = d => (d.novo === 0 || d.novo === 1) ? 'novo' : (d.re === 0 || d.re === 1) ? 're' : 'pim';
+// garante que ninguém presente "suma" do rodízio: quem não está em quadra, na fila nem saiu volta para o fim da fila
+function repararRodizio(d){
+  if (!d || !d.quadra) return false;
+  let mud = false; const saiu = d.saiu || {}, lin = linhaOf(d), pres = new Set(lin);
+  const f = d.fila.filter(id => pres.has(id) && !saiu[id]); if (f.length !== d.fila.length){ d.fila = f; mud = true; }
+  const on = new Set([...d.quadra[0], ...d.quadra[1]]), inF = new Set(d.fila);
+  for (const id of lin) if (!saiu[id] && !on.has(id) && !inF.has(id)){ d.fila.push(id); mud = true; }
+  return mud;
+}
 function sideOf(d, id){ if (!d.quadra) return -1; return d.quadra[0].includes(id) ? 0 : d.quadra[1].includes(id) ? 1 : -1; }
 // tira o jogador do rodízio; se estava em quadra, o primeiro da fila entra no lugar
 function tirarDoRodizio(d, id){
@@ -808,12 +821,13 @@ function vJogo(){
   const d = S.days[ui.date];
   if (!d || linhaOf(d).length < 2) return `<div class="card empty"><p>Anote quem chegou na aba <b>Lista</b> primeiro.</p><br><button class="btn pri" data-a="tab" data-k="dia">Ir para a Lista</button></div>`;
   if (!d.quadra) return vPreview(d);
+  if (!d.fechado && repararRodizio(d)) saveDay(ui.date);
   if (live.date !== ui.date){ live = {...LIVE0(), date:ui.date}; saveLive(); }
   const evb = id => { const ev = live.ev || []; const ng = ev.filter(e => e.g === id).length, na = ev.filter(e => e.a === id).length;
     return (ng ? ` <b class="evb">${'⚽'.repeat(ng)}</b>` : '') + (na ? ` <b class="evb">${'<span class="abox">A</span>'.repeat(na)}</b>` : ''); };
   const meio = new Set(d.meio || []);
-  const slots = k => (d.quadra[k] || []).map(id => `<span class="slotw"><button class="slot ${meio.has(id)?'sub':''}" data-a="slot" data-id="${id}"><span>${esc(pname(id))}${evb(id)}${meio.has(id) ? '<small>entrou no meio do jogo</small>' : ''}</span></button><button class="sx" data-a="saiuq" data-id="${id}" title="Saiu do jogo">✕</button></span>`).join('')
-    + ((d.quadra[k] || []).length < 5 && d.fila.length ? `<button class="slot vaga" data-a="compq" data-k="${k}"><span>＋ Completar<small>entra ${esc(pname(d.fila[0]))}, 1º da fila</small></span></button>` : '');
+  const slots = k => (d.quadra[k] || []).map((id,i) => `<span class="slotw"><button class="slot ${meio.has(id)?'sub':''}" data-a="slot" data-id="${id}" data-dz="q${k}" data-di="${i}" data-nm="${esc(pname(id))}"><span>${esc(pname(id))}${evb(id)}${meio.has(id) ? '<small>entrou no meio do jogo</small>' : ''}</span></button><button class="sx" data-a="saiuq" data-id="${id}" title="Saiu do jogo">✕</button></span>`).join('')
+    + ((d.quadra[k] || []).length < 5 && d.fila.length ? `<button class="slot vaga" data-a="compq" data-k="${k}" data-dz="v${k}" data-di="0"><span>＋ Completar<small>entra ${esc(pname(d.fila[0]))}, 1º da fila</small></span></button>` : '');
   const side = k => `<div class="side" style="background:${COLETE[k].c};color:${COLETE[k].t}">
       <div class="tn">${esc(tname(k))}</div><div class="gl num">${live.g[k]}</div>
       <div class="gb"><button data-a="gol" data-k="${k}" data-d="-1">−</button><button class="plus" data-a="gol" data-k="${k}" data-d="1">+</button></div>
@@ -823,7 +837,7 @@ function vJogo(){
   const ficaE = sug !== 'e' ? null : (pim ? (live.fica === 0 || live.fica === 1 ? live.fica : null) : et === 're' ? d.re : d.novo);
   const ficaTxt = 'volta primeiro';
   const st = live.run ? 'Pausar' : (live.acc > 0 && !live.done ? 'Continuar' : 'Iniciar');
-  const fl = d.fila, grp = (a,b) => fl.slice(a,b).map((id,k) => `<button class="slot" data-a="slot" data-id="${id}"><span class="mu" style="width:22px">${a+k+1}º</span><span>${esc(pname(id))}</span></button>`).join('');
+  const fl = d.fila, grp = (a,b) => fl.slice(a,b).map((id,k) => `<button class="slot" data-a="slot" data-id="${id}" data-dz="f" data-di="${a+k}" data-nm="${esc(pname(id))}"><span class="mu" style="width:22px">${a+k+1}º</span><span>${esc(pname(id))}</span></button>`).join('');
   const stk = d.streak && d.streak.n >= 1 ? `<span class="chip" style="font-family:Inter;text-transform:none;${d.streak.n >= 2 ? 'background:#5a3d0c;color:#ffd99a' : ''}">${esc(tname(d.streak.s))}: ${d.streak.n} vitória${d.streak.n>1?'s':''} seguida${d.streak.n>1?'s':''}${d.streak.n >= 2 ? ' — se vencer, saem os dois' : ''}</span>` : '';
   return `<div class="jgrid"><div class="jmain">
   <div class="card">
@@ -852,6 +866,7 @@ function vJogo(){
   </div></div><div class="jside">
   <div class="card">
     <h2>Fila <span class="sp btns"><button class="btn sm" data-a="editf">Ajustar fila</button></span></h2>
+    <p class="sm mu" style="margin:-4px 0 8px">✋ Segure um nome e arraste sobre outro para trocar de lugar — entre os times ou com a fila.</p>
     <div class="queue">
       <div class="qcard" style="border-color:var(--ac)"><div class="ql">Próximo</div><div class="qlist">${grp(0,5) || '<span class="sm mu">ninguém — o time que perder volta</span>'}</div></div>
       ${fl.length > 5 ? `<div class="qcard" style="border-color:var(--mu)"><div class="ql">Ré</div><div class="qlist">${grp(5,10)}</div></div>` : ''}
@@ -1223,7 +1238,7 @@ const A = {
   },
   undo: async () => { const d = S.days[ui.date]; if (!(await ask('Desfazer o último jogo registrado? Os times e a fila voltam como estavam.', 'Desfazer'))) return;
     const j = d.jogos.pop(); if (j && j.snap){ d.quadra = j.snap.quadra; d.fila = j.snap.fila; d.streak = j.snap.streak; d.novo = j.snap.novo; d.re = j.snap.re ?? null; d.meio = j.snap.meio || []; }
-    saveDay(ui.date); render(); },
+    repararRodizio(d); saveDay(ui.date); render(); },
   slot: x => slotModal(S.days[ui.date], x.id),
   saiu: x => A.saiuq(x),
   // saiu durante o jogo: escolhe quem entra (1º da fila, outro da fila ou seguir com 4)
@@ -1372,6 +1387,71 @@ A.fechardia = async () => {
   if (live.date === ui.date){ live = {...LIVE0(), date:ui.date}; saveLive(); keepAwake(false); }
   saveDay(ui.date); render(); window.scrollTo(0,0); toast('🔒 Dia fechado e gravado');
 };
+/* ---------- arrastar nomes para trocar de lugar (times ⇄ times ⇄ fila) ---------- */
+let drag = null, dragSupClick = 0, lastTouch = 0;
+function dzOf(el){ const s = el && el.closest && el.closest('[data-dz]'); return s ? { el:s, z:s.dataset.dz, i:+s.dataset.di } : null; }
+function dzArr(d, z){ return z === 'f' ? d.fila : d.quadra[+z.slice(1)]; }
+function dragStart(x, y){
+  if (!drag || drag.on) return;
+  const g = document.createElement('div'); g.className = 'dghost'; g.textContent = drag.src.el.dataset.nm || ''; document.body.appendChild(g);
+  drag.on = true; drag.g = g; drag.src.el.classList.add('dsrc'); dragMove(x, y);
+  try { navigator.vibrate && navigator.vibrate(30); } catch(e){}
+}
+function dragMove(x, y){
+  if (!drag || !drag.on) return;
+  drag.g.style.left = x + 'px'; drag.g.style.top = y + 'px';
+  if (y > innerHeight - 90) scrollBy(0, 14); else if (y < 90) scrollBy(0, -14);   // rola a tela perto das bordas
+  drag.g.style.display = 'none'; const t = dzOf(document.elementFromPoint(x, y)); drag.g.style.display = '';
+  document.querySelectorAll('.dtgt').forEach(e => e.classList.remove('dtgt'));
+  drag.tgt = (t && t.el !== drag.src.el) ? t : null; if (drag.tgt) drag.tgt.el.classList.add('dtgt');
+}
+function dragEnd(){
+  if (!drag) return; clearTimeout(drag.tm);
+  const dd = drag; drag = null;
+  if (!dd.on) return;
+  dd.g.remove(); document.querySelectorAll('.dtgt,.dsrc').forEach(e => e.classList.remove('dtgt','dsrc'));
+  dragSupClick = Date.now();
+  if (dd.tgt) trocarPos(dd.src, dd.tgt);
+}
+function trocarPos(a, b){
+  const d = S.days[ui.date]; if (!d || !d.quadra) return;
+  if (dayLocked()){ toast('🔒 Dia fechado — não pode mais ser alterado'); return; }
+  const A1 = dzArr(d, a.z), id = A1[a.i]; if (!id) return;
+  if (b.z[0] === 'v'){                       // solta numa vaga: o jogador vai para aquele time
+    const B1 = d.quadra[+b.z.slice(1)]; if (A1 === B1) return;
+    A1.splice(a.i, 1); B1.push(id);
+    saveDay(ui.date); render(); toast(`${pname(id)} foi para o ${tname(+b.z.slice(1))}`); return;
+  }
+  const B1 = dzArr(d, b.z), id2 = B1[b.i]; if (!id2) return;
+  A1[a.i] = id2; B1[b.i] = id;
+  saveDay(ui.date); render(); toast(`${pname(id)} ⇄ ${pname(id2)}`);
+}
+document.addEventListener('touchstart', e => {
+  lastTouch = Date.now();
+  const t = dzOf(e.target); if (!t || t.z[0] === 'v' || ui.tab !== 'jogo' || e.touches.length > 1) return;
+  const p = e.touches[0];
+  drag = { src:t, x0:p.clientX, y0:p.clientY, on:false };
+  drag.tm = setTimeout(() => { if (drag && !drag.on) dragStart(drag.x0, drag.y0); }, 280);
+}, { passive:true });
+document.addEventListener('touchmove', e => {
+  if (!drag) return; const p = e.touches[0];
+  if (!drag.on){ if (Math.hypot(p.clientX - drag.x0, p.clientY - drag.y0) > 10){ clearTimeout(drag.tm); drag = null; } return; }
+  e.preventDefault(); dragMove(p.clientX, p.clientY);
+}, { passive:false });
+document.addEventListener('touchend', dragEnd); document.addEventListener('touchcancel', dragEnd);
+document.addEventListener('mousedown', e => {
+  if (Date.now() - lastTouch < 800 || e.button !== 0) return;
+  const t = dzOf(e.target); if (!t || t.z[0] === 'v' || ui.tab !== 'jogo') return;
+  drag = { src:t, x0:e.clientX, y0:e.clientY, on:false };
+});
+document.addEventListener('mousemove', e => {
+  if (!drag || Date.now() - lastTouch < 800) return;
+  if (!drag.on){ if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) dragStart(e.clientX, e.clientY); return; }
+  dragMove(e.clientX, e.clientY);
+});
+document.addEventListener('mouseup', () => { if (Date.now() - lastTouch >= 800) dragEnd(); });
+document.addEventListener('contextmenu', e => { if (drag || dzOf(e.target)) e.preventDefault(); });
+document.addEventListener('click', e => { if (Date.now() - dragSupClick < 400){ e.preventDefault(); e.stopPropagation(); return; } }, true);
 document.addEventListener('click', e => { const b = e.target.closest('[data-a]'); if (!b || b.disabled) return; const f = A[b.dataset.a]; if (f){ e.preventDefault(); if (LOCK.has(b.dataset.a) && dayLocked()){ toast('🔒 Dia fechado — não pode mais ser alterado'); return; } f(b.dataset, b); } });
 document.addEventListener('input', e => {
   if (e.target.id === 'tq'){ ui.tq = e.target.value; filtraTerca(); return; }
